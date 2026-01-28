@@ -259,6 +259,7 @@ Claims tokens by providing Merkle proof.
 - `AlreadyClaimed` - pack already claimed
 - `InvalidMint` - wrong token mint
 - `InvalidProof` - Merkle verification failed
+- `ProofTooLong` - proof lenght exceeds 20
 
 ---
 
@@ -283,7 +284,7 @@ Withdraws SOL from vault.
 
 **Errors:**
 - `Unauthorized` - signer not authority
-- `InsufficientFunds` - amount exceeds balance
+- `InsufficientFunds` - amount exceeds balance 
 
 ---
 
@@ -352,6 +353,7 @@ Stops all future sales.
 | 6007 | Unauthorized | Not campaign authority |
 | 6008 | InsufficientFunds | Withdrawal exceeds balance |
 | 6009 | InvalidMintAuthority | Program not mint authority |
+| 6010 | ProofTooLong | Proof exceeds 20 levels |
 
 ---
 

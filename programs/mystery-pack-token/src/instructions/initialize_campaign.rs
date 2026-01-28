@@ -19,7 +19,7 @@ pub struct InitializeCampaign<'info> {
     pub campaign: Account<'info, Campaign>,
 
     #[account(
-        mint::token_program = token_program
+        mint::token_program = token_program,
     )]
     pub token_mint: InterfaceAccount<'info, Mint>,
 
@@ -43,6 +43,13 @@ impl<'info> InitializeCampaign<'info> {
         total_packs: u32,
         bumps: &InitializeCampaignBumps,
     ) -> Result<()> {
+        let mint_authority = self.token_mint.mint_authority;
+        
+        require!(
+            mint_authority.is_some() && mint_authority.unwrap() == self.campaign.key(),
+            CampaignError::InvalidMintAuthority
+        );
+
         self.campaign.set_inner(Campaign {
             seed,
             authority: self.authority.key(),

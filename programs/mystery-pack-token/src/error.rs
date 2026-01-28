@@ -30,4 +30,7 @@ pub enum CampaignError {
 
     #[msg("Insufficient funds")]
     InsufficientFunds,
+
+    #[msg("Invalid mint authority")]
+    InvalidMintAuthority
 }

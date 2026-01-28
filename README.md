@@ -41,8 +41,6 @@ solana config set --url mainnet-beta
 anchor deploy --provider.cluster mainnet
 ```
 
-# Architecture & Fairness Mechanism
-
 ## System Overview
 ```
 ┌─────────────┐    purchase     ┌─────────────┐     claim      ┌─────────────┐
@@ -50,12 +48,6 @@ anchor deploy --provider.cluster mainnet
 │             │    (SOL)        │  (pack #N)  │   (proof)      │  (minted)   │
 └─────────────┘                 └─────────────┘                └─────────────┘
 ```
-
-## The Problem
-
-Users buy mystery packs without knowing contents. How can they trust the seller isn't cheating?
-
-## The Solution: Merkle Tree Commitment
 
 ### Phase 1: Setup (Before Sales)
 ```
@@ -183,8 +175,6 @@ Algorithm:
 | Authority | has_one checks on admin functions |
 | Immutability | Merkle root cannot change |
 
-# API Documentation
-
 ## Instructions
 
 ### initialize_campaign
@@ -213,6 +203,7 @@ Creates a new campaign with Merkle root commitment.
 
 **Errors:**
 - `InvalidAmount` - price or total_packs is zero
+- `InvalidMintAuthority` - campaign pda not mint authority
 
 ---
 
@@ -360,6 +351,7 @@ Stops all future sales.
 | 6006 | InvalidMint | Token mint mismatch |
 | 6007 | Unauthorized | Not campaign authority |
 | 6008 | InsufficientFunds | Withdrawal exceeds balance |
+| 6009 | InvalidMintAuthority | Program not mint authority |
 
 ---
 

@@ -29,10 +29,16 @@ pub struct WithdrawAdmin<'info> {
 impl<'info> WithdrawAdmin<'info> {
     pub fn withdraw(&self, amount: Option<u64>) -> Result<()> {
         let vault_balance = self.sol_vault.lamports();
+        let rent = Rent::get()?;
+        let min_balance = rent.minimum_balance(0);
         
-        let withdraw_amount = amount.unwrap_or(vault_balance);
+        let max_withdrawable = vault_balance.saturating_sub(min_balance);
+        let withdraw_amount = match amount {
+            Some(amt) => amt,
+            None => max_withdrawable,
+        };
         
-        require!(withdraw_amount <= vault_balance, CampaignError::InsufficientFunds);
+        require!(withdraw_amount <= max_withdrawable, CampaignError::InsufficientFunds);
 
         let campaign_key = self.campaign.key();
         let bump = [self.campaign.vault_bump];

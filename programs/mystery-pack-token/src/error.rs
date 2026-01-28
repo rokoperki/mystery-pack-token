@@ -32,5 +32,8 @@ pub enum CampaignError {
     InsufficientFunds,
 
     #[msg("Invalid mint authority")]
-    InvalidMintAuthority
+    InvalidMintAuthority,
+
+    #[msg("Proof exceeds maximum length")]
+    ProofTooLong,
 }

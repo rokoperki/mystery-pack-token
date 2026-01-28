@@ -103,5 +103,6 @@ pub fn handler(
     salt: [u8; 32],
     proof: Vec<[u8; 32]>,
 ) -> Result<()> {
+    require!(proof.len() <= 20, CampaignError::ProofTooLong);
     ctx.accounts.claim_pack(token_amount, salt, proof)
 }

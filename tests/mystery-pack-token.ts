@@ -699,7 +699,7 @@ describe("mystery-pack", () => {
     it("allows authority to withdraw SOL", async () => {
       const authorityBefore = await provider.connection.getBalance(authority.publicKey);
       const vaultBefore = await provider.connection.getBalance(vaultPda);
-
+      const rentExempt = await provider.connection.getMinimumBalanceForRentExemption(0);
       await program.methods
         .withdrawAdmin(null) // Withdraw all
         .accountsStrict({
@@ -711,11 +711,18 @@ describe("mystery-pack", () => {
         .signers([authority])
         .rpc();
 
-      const authorityAfter = await provider.connection.getBalance(authority.publicKey);
-      const vaultAfter = await provider.connection.getBalance(vaultPda);
-
-      expect(vaultAfter).to.equal(0);
-      expect(authorityAfter).to.be.greaterThan(authorityBefore);
+        const authorityAfter = await provider.connection.getBalance(authority.publicKey);
+        const vaultAfter = await provider.connection.getBalance(vaultPda);
+    
+        // Vault should retain rent-exempt minimum
+        expect(vaultAfter).to.equal(rentExempt);
+        
+        // Authority should receive (vaultBefore - rentExempt - txFee)
+        expect(authorityAfter).to.be.greaterThan(authorityBefore);
+        
+        // Verify the math: withdrawn amount = vaultBefore - rentExempt
+        const expectedWithdrawn = vaultBefore - rentExempt;
+        console.log(`Withdrew ${expectedWithdrawn} lamports, vault retained ${rentExempt} for rent`);
     });
 
     it("fails for non-authority", async () => {

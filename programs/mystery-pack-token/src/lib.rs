@@ -6,10 +6,10 @@ mod states;
 mod utils;
 use instructions::*;
 
-declare_id!("22222222222222222222222222222222222222222222");
+declare_id!("FqrPSmUCFpsdERKhasDTAePN4pTsoo5wrJwzdJZiVQpD");
 
 #[program]
-pub mod blueshift_anchor_escrow {
+pub mod mystery_pack_token {
     use super::*;
 
     #[instruction(discriminator = 0)]
@@ -27,7 +27,7 @@ pub mod blueshift_anchor_escrow {
     pub fn purchase_pack(ctx: Context<PurchasePack>) -> Result<()> {
         instructions::purchase_pack::handler(ctx)
     }
-    
+
     #[instruction(discriminator = 2)]
     pub fn claim_pack(
         ctx: Context<ClaimPack>,
@@ -36,5 +36,15 @@ pub mod blueshift_anchor_escrow {
         proof: Vec<[u8; 32]>,
     ) -> Result<()> {
         instructions::claim_pack::handler(ctx, token_amount, salt, proof)
+    }
+
+    #[instruction(discriminator = 3)]
+    pub fn withdraw_admin(ctx: Context<WithdrawAdmin>, amount: Option<u64>) -> Result<()> {
+        instructions::withdraw_admin::handler(ctx, amount)
+    }
+
+    #[instruction(discriminator = 4)]
+    pub fn close_campaign(ctx: Context<CloseCampaign>) -> Result<()> {
+        instructions::close_campaign::handler(ctx)
     }
 }

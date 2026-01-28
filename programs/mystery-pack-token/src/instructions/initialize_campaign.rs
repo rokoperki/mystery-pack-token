@@ -25,7 +25,7 @@ pub struct InitializeCampaign<'info> {
 
     #[account(
         mut,
-        seeds = [b"sol_vault", campaign.key().as_ref()],
+        seeds = [b"vault", campaign.key().as_ref()],
         bump,
     )]
     pub sol_vault: SystemAccount<'info>,

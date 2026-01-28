@@ -25,9 +25,6 @@ pub enum CampaignError {
     #[msg("Token mint does not match campaign")]
     InvalidMint,
 
-    #[msg("Invalid mint authority")]
-    InvalidMintAuthority,
-
     #[msg("Unauthorized action")]
     Unauthorized,
 

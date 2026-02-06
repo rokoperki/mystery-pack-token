@@ -7,4 +7,5 @@ pub struct Receipt {
     pub buyer: Pubkey,
     pub pack_index: u32,
     pub is_claimed: bool,
+    pub nonce: u64,
 }

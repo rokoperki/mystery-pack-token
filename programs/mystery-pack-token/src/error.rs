@@ -34,4 +34,19 @@ pub enum CampaignError {
 
     #[msg("Proof exceeds maximum length")]
     ProofTooLong,
+
+    #[msg("Invalid randomness account")]
+    InvalidRandomnessAccount,
+
+    #[msg("Randomness is not ready yet")]
+    RandomnessNotReady,
+
+    #[msg("Pack has already been settled")]
+    AlreadySettled,
+
+    #[msg("Randomness slot does not match expected value")]
+    RandomnessSlotMismatch,
+
+    #[msg("No packs are available for purchase")]
+    NoPacksAvailable,
 }

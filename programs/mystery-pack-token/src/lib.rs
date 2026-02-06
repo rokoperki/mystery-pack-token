@@ -6,7 +6,7 @@ mod states;
 mod utils;
 use instructions::*;
 
-declare_id!("FqrPSmUCFpsdERKhasDTAePN4pTsoo5wrJwzdJZiVQpD");
+declare_id!("AM6pwecsQXLf7UViTd6jHxAYDwSXSTNfqcZ5aSjXoKEn");
 
 #[program]
 pub mod mystery_pack_token {
@@ -24,11 +24,16 @@ pub mod mystery_pack_token {
     }
 
     #[instruction(discriminator = 1)]
-    pub fn purchase_pack(ctx: Context<PurchasePack>) -> Result<()> {
-        instructions::purchase_pack::handler(ctx)
+    pub fn commit_purchase(ctx: Context<CommitPurchase>, nonce: u64) -> Result<()> {
+        instructions::commit_purchase::handler(ctx, nonce)
     }
 
     #[instruction(discriminator = 2)]
+    pub fn settle_randomness(ctx: Context<SettleRandomness>) -> Result<()> {
+        instructions::settle_randomness::handler(ctx)
+    }
+
+    #[instruction(discriminator = 3)]
     pub fn claim_pack(
         ctx: Context<ClaimPack>,
         token_amount: u64,
@@ -38,12 +43,12 @@ pub mod mystery_pack_token {
         instructions::claim_pack::handler(ctx, token_amount, salt, proof)
     }
 
-    #[instruction(discriminator = 3)]
+    #[instruction(discriminator = 4)]
     pub fn withdraw_admin(ctx: Context<WithdrawAdmin>, amount: Option<u64>) -> Result<()> {
         instructions::withdraw_admin::handler(ctx, amount)
     }
 
-    #[instruction(discriminator = 4)]
+    #[instruction(discriminator = 5)]
     pub fn close_campaign(ctx: Context<CloseCampaign>) -> Result<()> {
         instructions::close_campaign::handler(ctx)
     }

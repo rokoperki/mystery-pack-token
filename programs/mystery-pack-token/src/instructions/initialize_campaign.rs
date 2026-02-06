@@ -20,6 +20,8 @@ pub struct InitializeCampaign<'info> {
 
     #[account(
         mint::token_program = token_program,
+        constraint = token_mint.mint_authority.is_some() @ CampaignError::InvalidMintAuthority,
+        constraint = token_mint.mint_authority.unwrap() == campaign.key() @ CampaignError::InvalidMintAuthority,
     )]
     pub token_mint: InterfaceAccount<'info, Mint>,
 
@@ -43,12 +45,12 @@ impl<'info> InitializeCampaign<'info> {
         total_packs: u32,
         bumps: &InitializeCampaignBumps,
     ) -> Result<()> {
-        let mint_authority = self.token_mint.mint_authority;
-        
-        require!(
-            mint_authority.is_some() && mint_authority.unwrap() == self.campaign.key(),
-            CampaignError::InvalidMintAuthority
-        );
+        let mut bitmap = [0u8; 32];
+        for i in 0..total_packs {
+            let byte_index = (i / 8) as usize;
+            let bit_index = i % 8;
+            bitmap[byte_index] |= 1 << bit_index;
+        }
 
         self.campaign.set_inner(Campaign {
             seed,
@@ -58,6 +60,8 @@ impl<'info> InitializeCampaign<'info> {
             total_packs,
             packs_sold: 0,
             merkle_root,
+            packs_committed: 0,
+            available_bitmap: bitmap,
             is_active: true,
             bump: bumps.campaign,
             vault_bump: bumps.sol_vault,
@@ -75,7 +79,11 @@ pub fn handler(
     total_packs: u32,
 ) -> Result<()> {
     require_gt!(pack_price, 0, CampaignError::InvalidAmount);
-    require_gt!(total_packs, 0, CampaignError::InvalidAmount);
+    require!(
+        total_packs > 0 && total_packs < 100,
+        CampaignError::InvalidAmount
+    );
+    require!(pack_price < 1_000_000_000, CampaignError::InvalidAmount);
 
     ctx.accounts
         .initialize(seed, merkle_root, pack_price, total_packs, &ctx.bumps)?;

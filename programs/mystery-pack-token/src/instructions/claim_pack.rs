@@ -20,7 +20,7 @@ pub struct ClaimPack<'info> {
 
     #[account(
         mut,
-        seeds = [b"receipt", campaign.key().as_ref(), &receipt.pack_index.to_le_bytes()],
+        seeds = [b"receipt", campaign.key().as_ref(), buyer.key().as_ref(), receipt.nonce.to_le_bytes().as_ref()],
         bump,
         constraint = receipt.buyer == buyer.key() @ CampaignError::NotPackOwner,
         constraint = !receipt.is_claimed @ CampaignError::AlreadyClaimed,

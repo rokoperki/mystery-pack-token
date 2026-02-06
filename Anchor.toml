@@ -6,13 +6,16 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-mystery_pack_token = "FqrPSmUCFpsdERKhasDTAePN4pTsoo5wrJwzdJZiVQpD"
+mystery_pack_token = "AM6pwecsQXLf7UViTd6jHxAYDwSXSTNfqcZ5aSjXoKEn"
+
+[programs.devnet]
+mystery_pack_token = "AM6pwecsQXLf7UViTd6jHxAYDwSXSTNfqcZ5aSjXoKEn"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

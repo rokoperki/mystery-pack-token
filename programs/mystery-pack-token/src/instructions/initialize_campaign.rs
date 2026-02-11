@@ -83,7 +83,6 @@ pub fn handler(
         total_packs > 0 && total_packs < 100,
         CampaignError::InvalidAmount
     );
-    require!(pack_price < 1_000_000_000, CampaignError::InvalidAmount);
 
     ctx.accounts
         .initialize(seed, merkle_root, pack_price, total_packs, &ctx.bumps)?;

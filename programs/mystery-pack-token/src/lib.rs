@@ -8,6 +8,10 @@ use instructions::*;
 
 declare_id!("AM6pwecsQXLf7UViTd6jHxAYDwSXSTNfqcZ5aSjXoKEn");
 
+// Fee configuration
+pub const FEE_PERCENTAGE: u64 = 5;
+pub const FEE_RECIPIENT: &str = "4V7DMPohjiBXnYSnYr2XaoYxQEZzYXgAZSJs2ozbexMc";
+
 #[program]
 pub mod mystery_pack_token {
     use super::*;

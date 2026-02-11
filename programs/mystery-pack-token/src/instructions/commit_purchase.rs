@@ -5,8 +5,7 @@ use anchor_lang::{
 use switchboard_on_demand::accounts::RandomnessAccountData;
 
 use crate::{
-    error::CampaignError,
-    states::{Campaign, PurchaseRequest},
+    FEE_PERCENTAGE, FEE_RECIPIENT, error::CampaignError, states::{Campaign, PurchaseRequest}
 };
 
 #[derive(Accounts)]
@@ -43,6 +42,12 @@ pub struct CommitPurchase<'info> {
     )]
     pub sol_vault: SystemAccount<'info>,
 
+    /// CHECK: Fee recipient address is validated against constant
+    #[account(
+        mut,
+    )]
+    pub fee_recipient: SystemAccount<'info>,
+
     pub system_program: Program<'info, System>,
 }
 
@@ -50,6 +55,26 @@ impl<'info> CommitPurchase<'info> {
     pub fn commit_purchase(&mut self, nonce: u64, bumps: &CommitPurchaseBumps) -> Result<()> {
         let randomness_data = RandomnessAccountData::parse(self.randomness_account.data.borrow())
             .map_err(|_| CampaignError::InvalidRandomnessAccount)?;
+
+        let fee_amount = self.campaign.pack_price
+            .checked_mul(FEE_PERCENTAGE)
+            .and_then(|v| v.checked_div(100))
+            .ok_or(CampaignError::InvalidAmount)?;
+
+        let vault_amount = self.campaign.pack_price
+            .checked_sub(fee_amount)
+            .ok_or(CampaignError::InvalidAmount)?;
+
+        transfer(
+            CpiContext::new(
+                self.system_program.to_account_info(),
+                Transfer {
+                    from: self.buyer.to_account_info(),
+                    to: self.fee_recipient.to_account_info(),
+                },
+            ),
+            fee_amount,
+        )?;
 
         transfer(
             CpiContext::new(
@@ -59,7 +84,7 @@ impl<'info> CommitPurchase<'info> {
                     to: self.sol_vault.to_account_info(),
                 },
             ),
-            self.campaign.pack_price,
+            vault_amount,
         )?;
 
         self.purchase_request.set_inner(PurchaseRequest {

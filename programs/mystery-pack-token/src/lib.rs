@@ -10,7 +10,7 @@ declare_id!("AM6pwecsQXLf7UViTd6jHxAYDwSXSTNfqcZ5aSjXoKEn");
 
 // Fee configuration
 pub const FEE_PERCENTAGE: u64 = 5;
-pub const FEE_RECIPIENT: &str = "4V7DMPohjiBXnYSnYr2XaoYxQEZzYXgAZSJs2ozbexMc";
+pub const FEE_RECIPIENT: &str = "HWiSjWWnBwd7Ff4DEYjC6LmQPrWLavPnmddvHLHKjs7Y";
 
 #[program]
 pub mod mystery_pack_token {

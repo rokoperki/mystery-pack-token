@@ -1,13 +1,19 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenInterface};
 
-use crate::{error::CampaignError, states::Campaign};
+use crate::{FEE_RECIPIENT, error::CampaignError, states::Campaign};
 
 #[derive(Accounts)]
 #[instruction(seed: u64)]
 pub struct InitializeCampaign<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
+
+    #[account(
+            mut,
+            constraint = fee_recipient.key() == FEE_RECIPIENT.parse().unwrap() @ CampaignError::InvalidFeeRecipient,
+        )]
+    pub fee_recipient: Signer<'info>,
 
     #[account(
         init,
@@ -80,7 +86,7 @@ pub fn handler(
 ) -> Result<()> {
     require_gt!(pack_price, 0, CampaignError::InvalidAmount);
     require!(
-        total_packs > 0 && total_packs < 100,
+        total_packs > 0 && total_packs < 101,
         CampaignError::InvalidAmount
     );
 

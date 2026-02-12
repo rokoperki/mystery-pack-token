@@ -49,4 +49,7 @@ pub enum CampaignError {
 
     #[msg("No packs are available for purchase")]
     NoPacksAvailable,
+
+    #[msg("Invalid fee recipient")]
+    InvalidFeeRecipient,
 }

@@ -1,6 +1,6 @@
 # Mystery Pack Token
 
-A Solana program for selling mystery packs with provably fair contents.
+A Solana program for selling mystery packs with provably fair contents using Merkle trees and Switchboard on-demand randomness.
 
 ## Prerequisites
 
@@ -43,10 +43,10 @@ anchor deploy --provider.cluster mainnet
 
 ## System Overview
 ```
-┌─────────────┐    purchase     ┌─────────────┐     claim      ┌─────────────┐
-│    User     │ ──────────────► │   Receipt   │ ─────────────► │   Tokens    │
-│             │    (SOL)        │  (pack #N)  │   (proof)      │  (minted)   │
-└─────────────┘                 └─────────────┘                └─────────────┘
+┌──────────┐  commit_purchase  ┌──────────────────┐  settle_randomness  ┌─────────────┐  claim_pack  ┌─────────────┐
+│   User   │ ────────────────► │ PurchaseRequest   │ ──────────────────► │   Receipt   │ ───────────► │   Tokens    │
+│          │   (SOL + RNG)     │ (pending random)  │   (random pack #)  │  (pack #N)  │  (proof)     │  (minted)   │
+└──────────┘                   └──────────────────┘                     └─────────────┘              └─────────────┘
 ```
 
 ### Phase 1: Setup (Before Sales)
@@ -73,12 +73,21 @@ anchor deploy --provider.cluster mainnet
    - Cannot be changed after deployment
 ```
 
-### Phase 2: Purchase
+### Phase 2: Purchase (Two-Step with Randomness)
 ```
-User calls purchase_pack():
-1. Pays pack_price in SOL
-2. Receives receipt with pack_index = N
-3. Contents still unknown to user
+Step 1 — commit_purchase():
+  1. User pays pack_price in SOL (5% fee + 95% to vault)
+  2. User specifies a Switchboard randomness account
+  3. Program records commit_slot from randomness account
+  4. PurchaseRequest PDA is created (pending settlement)
+
+Step 2 — settle_randomness():
+  1. Switchboard oracle fulfills randomness
+  2. User (or cranker) calls settle_randomness
+  3. Program reads revealed random value
+  4. Random value selects pack from available bitmap
+  5. Receipt PDA is created with assigned pack_index
+  6. PurchaseRequest account is closed (rent returned to buyer)
 ```
 
 ### Phase 3: Claim
@@ -105,9 +114,43 @@ User calls claim_pack(amount, salt, proof):
 | Backend claims wrong amount | Proof verification fails |
 | Backend uses wrong salt | Leaf hash differs, proof fails |
 | Admin tries to change contents | Root is immutable on-chain |
-| User claims different pack | Receipt has fixed pack_index |
+| User tries to claim different pack | Receipt has fixed pack_index |
+| User tries to predict pack assignment | Switchboard randomness is unpredictable |
+| User tries to manipulate random result | commit_slot locks in randomness source before reveal |
 
-The backend can ONLY produce valid proofs for the originally committed amounts.
+The backend can ONLY produce valid proofs for the originally committed amounts. Pack assignment is determined by Switchboard on-chain randomness, not by the backend.
+
+## Fee Mechanism
+
+A 5% platform fee is applied to every pack purchase:
+
+```
+pack_price = 1 SOL
+
+fee_amount  = 1 SOL × 5% = 0.05 SOL  → fee_recipient
+vault_amount = 1 SOL - 0.05 = 0.95 SOL → campaign vault
+```
+
+- Fee is transferred directly during `commit_purchase`
+- Fee recipient address is hardcoded in the program and validated on-chain
+
+## Randomness Flow (Switchboard On-Demand)
+
+```
+                    commit_purchase              Oracle Fulfills              settle_randomness
+User ──────────────────────────────► Chain ◄──────────────────── Switchboard ──────────────────► Chain
+  │                                    │                                          │
+  │ 1. Pay SOL                         │ 2. Record commit_slot                    │ 5. Read random value
+  │    + specify RNG account           │ 3. Create PurchaseRequest                │ 6. Select nth available pack
+  │                                    │ 4. Oracle reveals randomness             │ 7. Create Receipt
+  │                                    │                                          │ 8. Close PurchaseRequest
+```
+
+**How pack selection works:**
+1. Campaign tracks available packs in a 256-bit bitmap (1 = available, 0 = taken)
+2. Random value is mapped to `random_index = random_value % available_count`
+3. `get_nth_available(random_index)` walks the bitmap to find the Nth available pack
+4. The selected pack is marked as taken in the bitmap
 
 ## Merkle Proof Verification
 ```
@@ -116,51 +159,69 @@ Given: leaf, proof[], pack_index, stored_root
 Algorithm:
   hash = leaf
   index = pack_index
-  
+
   for sibling in proof:
       if index is even:
           hash = sha256(hash || sibling)
       else:
           hash = sha256(sibling || hash)
       index = index / 2
-  
+
   return hash == stored_root
 ```
 
 ## Account Architecture
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        Campaign PDA                          │
+│                        Campaign PDA                         │
 │  seeds: ["campaign", seed]                                  │
 ├─────────────────────────────────────────────────────────────┤
-│  authority: Pubkey     ──► Admin who can withdraw/close     │
-│  token_mint: Pubkey    ──► Token to distribute              │
-│  merkle_root: [u8;32]  ──► Immutable commitment             │
-│  pack_price: u64       ──► Cost per pack                    │
-│  total_packs: u32      ──► Maximum packs                    │
-│  packs_sold: u32       ──► Sequential counter               │
-│  is_active: bool       ──► Sales enabled                    │
+│  authority: Pubkey       ──► Admin who can withdraw/close   │
+│  token_mint: Pubkey      ──► Token to distribute            │
+│  merkle_root: [u8;32]    ──► Immutable commitment           │
+│  pack_price: u64         ──► Cost per pack                  │
+│  total_packs: u32        ──► Maximum packs                  │
+│  packs_sold: u32         ──► Settled pack counter           │
+│  packs_committed: u32    ──► Pending settlement counter     │
+│  available_bitmap: [u8;32] ► Bitmap of available packs      │
+│  is_active: bool         ──► Sales enabled                  │
 └─────────────────────────────────────────────────────────────┘
             │
-            │ has many
+            │ has many (temporary, closed after settle)
             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                        Receipt PDA                           │
-│  seeds: ["receipt", campaign, pack_index]                   │
+│                     PurchaseRequest PDA                      │
+│  seeds: ["purchase_request", campaign, buyer, nonce]        │
 ├─────────────────────────────────────────────────────────────┤
-│  campaign: Pubkey      ──► Parent campaign                  │
-│  buyer: Pubkey         ──► Owner of this pack               │
-│  pack_index: u32       ──► Which pack (0, 1, 2...)          │
-│  is_claimed: bool      ──► Already opened?                  │
+│  campaign: Pubkey        ──► Parent campaign                │
+│  buyer: Pubkey           ──► User who committed             │
+│  commit_slot: u64        ──► Switchboard seed slot          │
+│  randomness_account: Pubkey ► Switchboard RNG account       │
+│  nonce: u64              ──► Unique per buyer per campaign  │
+│  pack_index: Option<u32> ──► None until settled             │
+│  bump: u8                ──► PDA bump seed                  │
+└─────────────────────────────────────────────────────────────┘
+            │
+            │ settles into
+            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                        Receipt PDA                          │
+│  seeds: ["receipt", campaign, buyer, nonce]                  │
+├─────────────────────────────────────────────────────────────┤
+│  campaign: Pubkey        ──► Parent campaign                │
+│  buyer: Pubkey           ──► Owner of this pack             │
+│  pack_index: u32         ──► Randomly assigned pack         │
+│  nonce: u64              ──► Links to original purchase     │
+│  is_claimed: bool        ──► Already opened?                │
 └─────────────────────────────────────────────────────────────┘
             │
             │ references
             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                        Vault PDA                             │
+│                        Vault PDA                            │
 │  seeds: ["vault", campaign]                                 │
 ├─────────────────────────────────────────────────────────────┤
-│  Holds collected SOL from pack sales                        │
+│  Holds collected SOL from pack sales (95% after fee)        │
 │  Only authority can withdraw                                │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -170,10 +231,13 @@ Algorithm:
 | Layer | Protection |
 |-------|------------|
 | Cryptographic | SHA256 Merkle proofs |
+| Randomness | Switchboard on-demand oracle (commit-reveal pattern) |
+| Fairness | Bitmap-based pack selection prevents manipulation |
 | Ownership | Receipt.buyer == signer |
 | State | is_claimed prevents double-claim |
 | Authority | has_one checks on admin functions |
 | Immutability | Merkle root cannot change |
+| Fee integrity | Fee recipient hardcoded and validated on-chain |
 
 ## Instructions
 
@@ -186,6 +250,7 @@ Creates a new campaign with Merkle root commitment.
 | Name | Writable | Signer | Description |
 |------|----------|--------|-------------|
 | authority | ✓ | ✓ | Campaign creator |
+| fee_recipient | ✓ | ✓ | Platform fee recipient (validated against constant) |
 | campaign | ✓ | | PDA: `["campaign", seed]` |
 | token_mint | | | SPL token to distribute |
 | sol_vault | ✓ | | PDA: `["vault", campaign]` |
@@ -199,17 +264,18 @@ Creates a new campaign with Merkle root commitment.
 | seed | u64 | Unique campaign identifier |
 | merkle_root | [u8; 32] | Root hash of pack contents tree |
 | pack_price | u64 | Price per pack in lamports |
-| total_packs | u32 | Total packs available |
+| total_packs | u32 | Total packs available (1-100) |
 
 **Errors:**
-- `InvalidAmount` - price or total_packs is zero
-- `InvalidMintAuthority` - campaign pda not mint authority
+- `InvalidAmount` - price is zero or total_packs out of range
+- `InvalidMintAuthority` - campaign PDA is not the mint authority
+- `InvalidFeeRecipient` - fee recipient doesn't match hardcoded address
 
 ---
 
-### purchase_pack
+### commit_purchase
 
-Buys a pack and creates ownership receipt.
+Commits to a purchase by paying SOL and specifying a Switchboard randomness account. Creates a PurchaseRequest that must be settled after randomness is revealed.
 
 **Accounts:**
 
@@ -217,15 +283,52 @@ Buys a pack and creates ownership receipt.
 |------|----------|--------|-------------|
 | campaign | ✓ | | Campaign to purchase from |
 | buyer | ✓ | ✓ | User buying pack |
-| receipt | ✓ | | PDA: `["receipt", campaign, packs_sold]` |
-| sol_vault | ✓ | | Receives SOL payment |
+| purchase_request | ✓ | | PDA: `["purchase_request", campaign, buyer, nonce]` |
+| randomness_account | | | Switchboard randomness account |
+| sol_vault | ✓ | | Receives 95% of payment |
+| fee_recipient | ✓ | | Receives 5% platform fee |
+| system_program | | | System program |
+
+**Arguments:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| nonce | u64 | Unique identifier for this purchase (allows multiple purchases per buyer) |
+
+**Errors:**
+- `CampaignNotActive` - campaign is closed
+- `SoldOut` - all packs purchased or committed
+- `InvalidRandomnessAccount` - cannot parse Switchboard randomness data
+- `InvalidFeeRecipient` - fee recipient doesn't match hardcoded address
+- `InvalidAmount` - arithmetic overflow in fee calculation
+
+---
+
+### settle_randomness
+
+Settles a pending purchase by reading the revealed randomness and assigning a random pack. Closes the PurchaseRequest and creates a Receipt.
+
+**Accounts:**
+
+| Name | Writable | Signer | Description |
+|------|----------|--------|-------------|
+| campaign | ✓ | | Campaign configuration |
+| purchase_request | ✓ | | PurchaseRequest to settle (closed after) |
+| randomness_account | | | Must match purchase_request.randomness_account |
+| buyer | ✓ | ✓ | Must match purchase_request.buyer |
+| receipt | ✓ | | PDA: `["receipt", campaign, buyer, nonce]` |
 | system_program | | | System program |
 
 **Arguments:** None
 
 **Errors:**
-- `CampaignNotActive` - campaign is closed
-- `SoldOut` - all packs purchased
+- `Unauthorized` - buyer doesn't match purchase request
+- `AlreadySettled` - purchase already settled
+- `InvalidRandomnessAccount` - cannot parse Switchboard data
+- `RandomnessSlotMismatch` - seed_slot doesn't match commit_slot
+- `RandomnessNotReady` - oracle hasn't revealed yet
+- `SoldOut` - no packs available
+- `NoPacksAvailable` - bitmap exhausted
 
 ---
 
@@ -259,7 +362,7 @@ Claims tokens by providing Merkle proof.
 - `AlreadyClaimed` - pack already claimed
 - `InvalidMint` - wrong token mint
 - `InvalidProof` - Merkle verification failed
-- `ProofTooLong` - proof lenght exceeds 20
+- `ProofTooLong` - proof length exceeds 20
 
 ---
 
@@ -284,7 +387,7 @@ Withdraws SOL from vault.
 
 **Errors:**
 - `Unauthorized` - signer not authority
-- `InsufficientFunds` - amount exceeds balance 
+- `InsufficientFunds` - amount exceeds balance
 
 ---
 
@@ -311,31 +414,42 @@ Stops all future sales.
 
 ### Campaign
 
-| Field | Type | Offset | Size |
-|-------|------|--------|------|
-| seed | u64 | 8 | 8 |
-| authority | Pubkey | 16 | 32 |
-| token_mint | Pubkey | 48 | 32 |
-| pack_price | u64 | 80 | 8 |
-| total_packs | u32 | 88 | 4 |
-| packs_sold | u32 | 92 | 4 |
-| merkle_root | [u8; 32] | 96 | 32 |
-| is_active | bool | 128 | 1 |
-| bump | u8 | 129 | 1 |
-| vault_bump | u8 | 130 | 1 |
+| Field | Type | Size |
+|-------|------|------|
+| seed | u64 | 8 |
+| authority | Pubkey | 32 |
+| token_mint | Pubkey | 32 |
+| pack_price | u64 | 8 |
+| total_packs | u32 | 4 |
+| packs_sold | u32 | 4 |
+| merkle_root | [u8; 32] | 32 |
+| packs_committed | u32 | 4 |
+| available_bitmap | [u8; 32] | 32 |
+| is_active | bool | 1 |
+| bump | u8 | 1 |
+| vault_bump | u8 | 1 |
 
-**Total size:** 8 (discriminator) + 123 = 131 bytes
+### PurchaseRequest
+
+| Field | Type | Size |
+|-------|------|------|
+| campaign | Pubkey | 32 |
+| buyer | Pubkey | 32 |
+| commit_slot | u64 | 8 |
+| randomness_account | Pubkey | 32 |
+| nonce | u64 | 8 |
+| pack_index | Option\<u32\> | 5 |
+| bump | u8 | 1 |
 
 ### Receipt
 
-| Field | Type | Offset | Size |
-|-------|------|--------|------|
-| campaign | Pubkey | 8 | 32 |
-| buyer | Pubkey | 40 | 32 |
-| pack_index | u32 | 72 | 4 |
-| is_claimed | bool | 76 | 1 |
-
-**Total size:** 8 (discriminator) + 69 = 77 bytes
+| Field | Type | Size |
+|-------|------|------|
+| campaign | Pubkey | 32 |
+| buyer | Pubkey | 32 |
+| pack_index | u32 | 4 |
+| is_claimed | bool | 1 |
+| nonce | u64 | 8 |
 
 ---
 
@@ -354,6 +468,12 @@ Stops all future sales.
 | 6008 | InsufficientFunds | Withdrawal exceeds balance |
 | 6009 | InvalidMintAuthority | Program not mint authority |
 | 6010 | ProofTooLong | Proof exceeds 20 levels |
+| 6011 | InvalidRandomnessAccount | Invalid Switchboard randomness account |
+| 6012 | RandomnessNotReady | Oracle hasn't revealed randomness yet |
+| 6013 | AlreadySettled | Purchase already settled |
+| 6014 | RandomnessSlotMismatch | Seed slot doesn't match commit slot |
+| 6015 | NoPacksAvailable | No packs available in bitmap |
+| 6016 | InvalidFeeRecipient | Fee recipient doesn't match expected address |
 
 ---
 
@@ -371,12 +491,24 @@ const [vault] = PublicKey.findProgramAddressSync(
   programId
 );
 
+// PurchaseRequest
+const [purchaseRequest] = PublicKey.findProgramAddressSync(
+  [
+    Buffer.from("purchase_request"),
+    campaign.toBuffer(),
+    buyer.toBuffer(),
+    nonce.toArrayLike(Buffer, "le", 8)
+  ],
+  programId
+);
+
 // Receipt
 const [receipt] = PublicKey.findProgramAddressSync(
   [
     Buffer.from("receipt"),
     campaign.toBuffer(),
-    new BN(packIndex).toArrayLike(Buffer, "le", 4)
+    buyer.toBuffer(),
+    nonce.toArrayLike(Buffer, "le", 8)
   ],
   programId
 );

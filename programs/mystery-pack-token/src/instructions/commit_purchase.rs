@@ -45,6 +45,7 @@ pub struct CommitPurchase<'info> {
     /// CHECK: Fee recipient address is validated against constant
     #[account(
         mut,
+        constraint = fee_recipient.key() == FEE_RECIPIENT.parse().unwrap() @ CampaignError::InvalidFeeRecipient,
     )]
     pub fee_recipient: SystemAccount<'info>,
 

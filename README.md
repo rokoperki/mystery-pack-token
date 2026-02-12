@@ -43,10 +43,10 @@ anchor deploy --provider.cluster mainnet
 
 ## System Overview
 ```
-┌──────────┐  commit_purchase  ┌──────────────────┐  settle_randomness  ┌─────────────┐  claim_pack  ┌─────────────┐
+┌──────────┐  commit_purchase  ┌───────────────────┐  settle_randomness  ┌─────────────┐  claim_pack  ┌─────────────┐
 │   User   │ ────────────────► │ PurchaseRequest   │ ──────────────────► │   Receipt   │ ───────────► │   Tokens    │
-│          │   (SOL + RNG)     │ (pending random)  │   (random pack #)  │  (pack #N)  │  (proof)     │  (minted)   │
-└──────────┘                   └──────────────────┘                     └─────────────┘              └─────────────┘
+│          │   (SOL + RNG)     │ (pending random)  │   (random pack #)   │  (pack #N)  │  (proof)     │  (minted)   │
+└──────────┘                   └───────────────────┘                     └─────────────┘              └─────────────┘
 ```
 
 ### Phase 1: Setup (Before Sales)
@@ -190,7 +190,7 @@ Algorithm:
             │ has many (temporary, closed after settle)
             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                     PurchaseRequest PDA                      │
+│                     PurchaseRequest PDA                     │
 │  seeds: ["purchase_request", campaign, buyer, nonce]        │
 ├─────────────────────────────────────────────────────────────┤
 │  campaign: Pubkey        ──► Parent campaign                │
@@ -206,7 +206,7 @@ Algorithm:
             ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                        Receipt PDA                          │
-│  seeds: ["receipt", campaign, buyer, nonce]                  │
+│  seeds: ["receipt", campaign, buyer, nonce]                 │
 ├─────────────────────────────────────────────────────────────┤
 │  campaign: Pubkey        ──► Parent campaign                │
 │  buyer: Pubkey           ──► Owner of this pack             │
@@ -408,108 +408,3 @@ Stops all future sales.
 - `Unauthorized` - signer not authority
 - `CampaignNotActive` - already closed
 
----
-
-## Account Schemas
-
-### Campaign
-
-| Field | Type | Size |
-|-------|------|------|
-| seed | u64 | 8 |
-| authority | Pubkey | 32 |
-| token_mint | Pubkey | 32 |
-| pack_price | u64 | 8 |
-| total_packs | u32 | 4 |
-| packs_sold | u32 | 4 |
-| merkle_root | [u8; 32] | 32 |
-| packs_committed | u32 | 4 |
-| available_bitmap | [u8; 32] | 32 |
-| is_active | bool | 1 |
-| bump | u8 | 1 |
-| vault_bump | u8 | 1 |
-
-### PurchaseRequest
-
-| Field | Type | Size |
-|-------|------|------|
-| campaign | Pubkey | 32 |
-| buyer | Pubkey | 32 |
-| commit_slot | u64 | 8 |
-| randomness_account | Pubkey | 32 |
-| nonce | u64 | 8 |
-| pack_index | Option\<u32\> | 5 |
-| bump | u8 | 1 |
-
-### Receipt
-
-| Field | Type | Size |
-|-------|------|------|
-| campaign | Pubkey | 32 |
-| buyer | Pubkey | 32 |
-| pack_index | u32 | 4 |
-| is_claimed | bool | 1 |
-| nonce | u64 | 8 |
-
----
-
-## Error Codes
-
-| Code | Name | Message |
-|------|------|---------|
-| 6000 | InvalidAmount | Price or total_packs must be > 0 |
-| 6001 | CampaignNotActive | Campaign is closed |
-| 6002 | SoldOut | All packs purchased |
-| 6003 | NotPackOwner | Signer doesn't own this pack |
-| 6004 | AlreadyClaimed | Pack already claimed |
-| 6005 | InvalidProof | Merkle verification failed |
-| 6006 | InvalidMint | Token mint mismatch |
-| 6007 | Unauthorized | Not campaign authority |
-| 6008 | InsufficientFunds | Withdrawal exceeds balance |
-| 6009 | InvalidMintAuthority | Program not mint authority |
-| 6010 | ProofTooLong | Proof exceeds 20 levels |
-| 6011 | InvalidRandomnessAccount | Invalid Switchboard randomness account |
-| 6012 | RandomnessNotReady | Oracle hasn't revealed randomness yet |
-| 6013 | AlreadySettled | Purchase already settled |
-| 6014 | RandomnessSlotMismatch | Seed slot doesn't match commit slot |
-| 6015 | NoPacksAvailable | No packs available in bitmap |
-| 6016 | InvalidFeeRecipient | Fee recipient doesn't match expected address |
-
----
-
-## PDA Derivation
-```typescript
-// Campaign
-const [campaign] = PublicKey.findProgramAddressSync(
-  [Buffer.from("campaign"), seed.toArrayLike(Buffer, "le", 8)],
-  programId
-);
-
-// Vault
-const [vault] = PublicKey.findProgramAddressSync(
-  [Buffer.from("vault"), campaign.toBuffer()],
-  programId
-);
-
-// PurchaseRequest
-const [purchaseRequest] = PublicKey.findProgramAddressSync(
-  [
-    Buffer.from("purchase_request"),
-    campaign.toBuffer(),
-    buyer.toBuffer(),
-    nonce.toArrayLike(Buffer, "le", 8)
-  ],
-  programId
-);
-
-// Receipt
-const [receipt] = PublicKey.findProgramAddressSync(
-  [
-    Buffer.from("receipt"),
-    campaign.toBuffer(),
-    buyer.toBuffer(),
-    nonce.toArrayLike(Buffer, "le", 8)
-  ],
-  programId
-);
-```
